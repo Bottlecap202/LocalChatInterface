@@ -46,6 +46,8 @@ let currentSettings = {
     maxTokens: 2048,
     topP: 0.9
 };
+let websocket = null;
+let isGenerating = false;
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', async () => {
@@ -54,6 +56,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Load chat history
     await loadChatHistory();
+    
+    // Load available models
+    await loadAvailableModels();
     
     // Set up event listeners
     setupEventListeners();
@@ -122,6 +127,12 @@ function setupEventListeners() {
         editMessageModal.classList.remove('active');
     });
     
+    // Model selector
+    modelSelector.addEventListener('change', (e) => {
+        currentSettings.model = e.target.value;
+        saveSettingsToServer();
+    });
+    
     // Click outside modal to close
     window.addEventListener('click', (e) => {
         if (e.target === settingsModal) {
@@ -162,10 +173,37 @@ function openSettingsModal() {
     settingsModal.classList.add('active');
 }
 
+// Load available models from the server
+async function loadAvailableModels() {
+    try {
+        const response = await fetch('/api/models');
+        if (!response.ok) {
+            throw new Error('Failed to load models');
+        }
+        
+        const data = await response.json();
+        const models = data.models || [];
+        
+        // Update model selector
+        modelSelector.innerHTML = '';
+        models.forEach(model => {
+            const option = document.createElement('option');
+            option.value = model;
+            option.textContent = model;
+            if (model === currentSettings.model) {
+                option.selected = true;
+            }
+            modelSelector.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Error loading models:', error);
+    }
+}
+
 // Send message to the LLM
 async function sendMessage() {
     const message = messageInput.value.trim();
-    if (!message) return;
+    if (!message || isGenerating) return;
     
     // Add user message to chat
     addMessageToChat('user', message);
@@ -183,19 +221,146 @@ async function sendMessage() {
     chatMessages.appendChild(typingIndicator);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     
-    // Simulate API call to backend
+    // Set generating flag
+    isGenerating = true;
+    sendBtn.disabled = true;
+    
     try {
-        // In a real implementation, this would connect to your local LLM
-        // For now, we'll simulate a response
-        setTimeout(() => {
-            chatMessages.removeChild(typingIndicator);
-            addMessageToChat('assistant', 'This is a simulated response from your local LLM. In a real implementation, this would connect to your local AI model like Ollama, LocalAI, or any OpenAI-compatible endpoint.');
-            saveCurrentChat();
-        }, 1000);
+        // Create WebSocket connection
+        websocket = new WebSocket(`ws://${window.location.host}/api/chat`);
+        
+        // Prepare messages for the API
+        const apiMessages = currentMessages.map(msg => ({
+            role: msg.role,
+            content: msg.content
+        }));
+        apiMessages.push({ role: 'user', content: message });
+        
+        // Wait for WebSocket to open
+        websocket.onopen = () => {
+            // Send chat data to the server
+            websocket.send(JSON.stringify({
+                messages: apiMessages,
+                settings: currentSettings
+            }));
+        };
+        
+        // Create a new message element for the assistant response
+        const assistantMessageDiv = document.createElement('div');
+        assistantMessageDiv.className = 'message assistant-message';
+        assistantMessageDiv.dataset.id = 'msg-' + Date.now();
+        
+        const avatar = document.createElement('div');
+        avatar.className = 'message-avatar';
+        avatar.innerHTML = '<i class="fas fa-robot"></i>';
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'message-content';
+        contentDiv.innerHTML = '';
+        
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'message-actions';
+        
+        const regenerateBtn = document.createElement('button');
+        regenerateBtn.innerHTML = '<i class="fas fa-redo"></i>';
+        regenerateBtn.title = 'Regenerate response';
+        regenerateBtn.addEventListener('click', () => regenerateResponse(assistantMessageDiv));
+        actionsDiv.appendChild(regenerateBtn);
+        
+        const copyBtn = document.createElement('button');
+        copyBtn.innerHTML = '<i class="fas fa-copy"></i>';
+        copyBtn.title = 'Copy message';
+        copyBtn.addEventListener('click', () => copyMessage(contentDiv.textContent));
+        actionsDiv.appendChild(copyBtn);
+        
+        contentDiv.appendChild(actionsDiv);
+        assistantMessageDiv.appendChild(avatar);
+        assistantMessageDiv.appendChild(contentDiv);
+        
+        // Handle WebSocket messages
+        let responseContent = '';
+        websocket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'message') {
+                // Append the content to the response
+                responseContent += data.content;
+                contentDiv.innerHTML = marked.parse(responseContent);
+                contentDiv.appendChild(actionsDiv);
+                
+                // Apply syntax highlighting to code blocks
+                contentDiv.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+                
+                // Scroll to bottom
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            } else if (data.type === 'error') {
+                console.error('Error from server:', data.message);
+                contentDiv.innerHTML = `<p>Error: ${data.message}</p>`;
+                contentDiv.appendChild(actionsDiv);
+            }
+        };
+        
+        // Handle WebSocket close
+        websocket.onclose = () => {
+            // Remove typing indicator
+            if (typingIndicator.parentNode) {
+                chatMessages.removeChild(typingIndicator);
+            }
+            
+            // Add the assistant message to the chat
+            if (responseContent) {
+                chatMessages.appendChild(assistantMessageDiv);
+                
+                // Add to current messages array
+                const msgObj = {
+                    id: assistantMessageDiv.dataset.id,
+                    role: 'assistant',
+                    content: responseContent,
+                    timestamp: new Date().toISOString()
+                };
+                
+                currentMessages.push(msgObj);
+                saveCurrentChat();
+            }
+            
+            // Reset generating flag
+            isGenerating = false;
+            sendBtn.disabled = false;
+            websocket = null;
+        };
+        
+        // Handle WebSocket error
+        websocket.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            
+            // Remove typing indicator
+            if (typingIndicator.parentNode) {
+                chatMessages.removeChild(typingIndicator);
+            }
+            
+            // Show error message
+            addMessageToChat('assistant', 'Sorry, I encountered an error. Please check your connection and try again.');
+            
+            // Reset generating flag
+            isGenerating = false;
+            sendBtn.disabled = false;
+            websocket = null;
+        };
     } catch (error) {
-        chatMessages.removeChild(typingIndicator);
-        addMessageToChat('assistant', 'Sorry, I encountered an error. Please try again.');
+        // Remove typing indicator
+        if (typingIndicator.parentNode) {
+            chatMessages.removeChild(typingIndicator);
+        }
+        
+        // Show error message
+        addMessageToChat('assistant', 'Sorry, I encountered an error. Please check your connection and try again.');
         console.error('Error sending message:', error);
+        
+        // Reset generating flag
+        isGenerating = false;
+        sendBtn.disabled = false;
     }
 }
 
@@ -214,6 +379,11 @@ function addMessageToChat(role, content, messageId = null) {
     
     // Render markdown content
     contentDiv.innerHTML = marked.parse(content);
+    
+    // Apply syntax highlighting to code blocks
+    contentDiv.querySelectorAll('pre code').forEach((block) => {
+        hljs.highlightElement(block);
+    });
     
     // Add message actions
     const actionsDiv = document.createElement('div');
@@ -289,6 +459,11 @@ function saveEditedMessage(e) {
     if (messageElement) {
         messageElement.innerHTML = marked.parse(newContent);
         
+        // Apply syntax highlighting to code blocks
+        messageElement.querySelectorAll('pre code').forEach((block) => {
+            hljs.highlightElement(block);
+        });
+        
         // Re-add actions
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'message-actions';
@@ -314,40 +489,28 @@ function saveEditedMessage(e) {
 
 // Regenerate response
 function regenerateResponse(messageElement) {
-    // In a real implementation, this would send the conversation history
-    // up to this point to the LLM to generate a new response
-    const newResponse = "This is a regenerated response. In a real implementation, this would connect to your local LLM to generate a new response based on the conversation history.";
+    if (isGenerating) return;
     
-    // Update message content
-    const contentDiv = messageElement.querySelector('.message-content');
-    contentDiv.innerHTML = marked.parse(newResponse);
-    
-    // Re-add actions
-    const actionsDiv = document.createElement('div');
-    actionsDiv.className = 'message-actions';
-    
-    const regenerateBtn = document.createElement('button');
-    regenerateBtn.innerHTML = '<i class="fas fa-redo"></i>';
-    regenerateBtn.title = 'Regenerate response';
-    regenerateBtn.addEventListener('click', () => regenerateResponse(messageElement));
-    actionsDiv.appendChild(regenerateBtn);
-    
-    const copyBtn = document.createElement('button');
-    copyBtn.innerHTML = '<i class="fas fa-copy"></i>';
-    copyBtn.title = 'Copy message';
-    copyBtn.addEventListener('click', () => copyMessage(newResponse));
-    actionsDiv.appendChild(copyBtn);
-    
-    contentDiv.appendChild(actionsDiv);
-    
-    // Update in messages array
+    // Find the user message that prompted this response
     const messageId = messageElement.dataset.id;
     const messageIndex = currentMessages.findIndex(msg => msg.id === messageId);
-    if (messageIndex !== -1) {
-        currentMessages[messageIndex].content = newResponse;
-    }
     
-    saveCurrentChat();
+    if (messageIndex <= 0) return;
+    
+    const userMessageIndex = messageIndex - 1;
+    if (currentMessages[userMessageIndex].role !== 'user') return;
+    
+    const userMessage = currentMessages[userMessageIndex].content;
+    
+    // Remove the assistant message and all messages after it
+    currentMessages = currentMessages.slice(0, messageIndex);
+    
+    // Remove the message from the UI
+    messageElement.remove();
+    
+    // Resend the user message to get a new response
+    messageInput.value = userMessage;
+    sendMessage();
 }
 
 // Copy message to clipboard
@@ -369,7 +532,8 @@ async function saveCurrentChat() {
     const chatData = {
         id: currentChatId,
         title: chatTitle.textContent || 'New Chat',
-        messages: currentMessages
+        messages: currentMessages,
+        timestamp: new Date().toISOString()
     };
     
     try {
@@ -400,7 +564,8 @@ async function loadChatHistory() {
             throw new Error('Failed to load chat history');
         }
         
-        const chats = await response.json();
+        const data = await response.json();
+        const chats = data.chats || [];
         renderChatHistory(chats);
     } catch (error) {
         console.error('Error loading chat history:', error);
@@ -446,18 +611,24 @@ function renderChatHistory(chats) {
 // Load a specific chat
 async function loadChat(chatId) {
     try {
-        // In a real implementation, you would fetch the chat from the server
-        // For now, we'll simulate loading a chat
-        currentChatId = chatId;
-        chatTitle.textContent = 'Loaded Chat';
+        const response = await fetch(`/api/chats/${chatId}`);
+        if (!response.ok) {
+            throw new Error('Failed to load chat');
+        }
+        
+        const chat = await response.json();
+        
+        currentChatId = chat.id;
+        chatTitle.textContent = chat.title;
+        currentMessages = chat.messages || [];
         
         // Clear current messages
         chatMessages.innerHTML = '';
-        currentMessages = [];
         
-        // Add sample messages
-        addMessageToChat('user', 'Hello, can you help me with something?');
-        addMessageToChat('assistant', 'Of course! I\'m here to help. What do you need assistance with?');
+        // Add messages to UI
+        currentMessages.forEach(msg => {
+            addMessageToChat(msg.role, msg.content, msg.id);
+        });
         
         // Update UI
         toggleSidebar();
@@ -508,6 +679,25 @@ async function loadSettings() {
     }
 }
 
+// Save settings to server
+async function saveSettingsToServer() {
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(currentSettings)
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to save settings');
+        }
+    } catch (error) {
+        console.error('Error saving settings:', error);
+    }
+}
+
 // Apply settings to form
 function applySettingsToForm() {
     // Set API endpoint
@@ -543,7 +733,7 @@ async function saveSettings(e) {
     e.preventDefault();
     
     // Get values from form
-    const settings = {
+    currentSettings = {
         apiEndpoint: apiEndpointSelect.value || customApiEndpoint.value,
         model: modelSelector.value,
         temperature: parseFloat(temperatureSlider.value),
@@ -552,21 +742,18 @@ async function saveSettings(e) {
     };
     
     try {
-        const response = await fetch('/api/settings', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(settings)
-        });
-        
-        if (!response.ok) {
-            throw new Error('Failed to save settings');
-        }
-        
-        currentSettings = settings;
+        await saveSettingsToServer();
         settingsModal.classList.remove('active');
-        alert('Settings saved successfully!');
+        
+        // Reload available models
+        await loadAvailableModels();
+        
+        // Show success message
+        const originalText = themeToggle.innerHTML;
+        themeToggle.innerHTML = '<i class="fas fa-check"></i> Settings Saved!';
+        setTimeout(() => {
+            themeToggle.innerHTML = originalText;
+        }, 2000);
     } catch (error) {
         console.error('Error saving settings:', error);
         alert('Failed to save settings');
@@ -612,7 +799,14 @@ function importSettings() {
                 const settings = JSON.parse(content);
                 currentSettings = settings;
                 applySettingsToForm();
-                alert('Settings imported successfully!');
+                saveSettingsToServer();
+                
+                // Show success message
+                const originalText = themeToggle.innerHTML;
+                themeToggle.innerHTML = '<i class="fas fa-check"></i> Settings Imported!';
+                setTimeout(() => {
+                    themeToggle.innerHTML = originalText;
+                }, 2000);
             } catch (error) {
                 console.error('Error importing settings:', error);
                 alert('Failed to import settings. Invalid file format.');
@@ -630,4 +824,22 @@ function toggleTheme() {
     themeToggle.innerHTML = currentTheme === 'dark' ? 
         '<i class="fas fa-moon"></i> Dark Mode' : 
         '<i class="fas fa-sun"></i> Light Mode';
+    
+    // Save theme preference to localStorage
+    localStorage.setItem('theme', currentTheme);
 }
+
+// Load theme preference from localStorage
+function loadTheme() {
+    const savedTheme = localStorage.getItem('theme');
+    if (savedTheme) {
+        currentTheme = savedTheme;
+        document.body.classList.toggle('light-theme', currentTheme === 'light');
+        themeToggle.innerHTML = currentTheme === 'dark' ? 
+            '<i class="fas fa-moon"></i> Dark Mode' : 
+            '<i class="fas fa-sun"></i> Light Mode';
+    }
+}
+
+// Load theme on page load
+document.addEventListener('DOMContentLoaded', loadTheme);

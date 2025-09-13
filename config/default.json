@@ -1,0 +1,13 @@
+{
+  "availableEndpoints": {
+    "Local OpenAI-compatible": "http://localhost:1234/v1",
+    "Ollama": "http://localhost:11434/api",
+    "LocalAI": "http://localhost:8080"
+  },
+  "defaultModels": [
+    "gpt-3.5-turbo",
+    "gpt-4",
+    "llama2",
+    "mistral"
+  ]
+}
