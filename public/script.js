@@ -157,6 +157,11 @@ function createNewChat() {
     messageInput.focus();
 }
 
+// Open settings modal
+function openSettingsModal() {
+    settingsModal.classList.add('active');
+}
+
 // Send message to the LLM
 async function sendMessage() {
     const message = messageInput.value.trim();
