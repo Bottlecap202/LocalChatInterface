@@ -2,5 +2,8 @@
   "temp": 0.7,
   "max_tokens": 500,
   "top_p": 1.0,
-  "dark": true
+  "dark": true,
+  "title": "AI Assistant",
+  "subtitle": "How can I help you today?",
+  "input_placeholder": "Ask me anything…"
 }
