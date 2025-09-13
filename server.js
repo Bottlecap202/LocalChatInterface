@@ -97,4 +97,102 @@ app.post('/api/chat', (req, res) => {
       index++;
     } else {
       clearInterval(interval);
-      res.write('data
+      res.write('data: [DONE]\n\n');
+      res.end();
+    }
+  }, 30);
+});
+
+app.get('/api/chats', (req, res) => {
+  fs.readdir(chatsDir, (err, files) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to read chats directory' });
+    }
+    
+    const chats = files
+      .filter(file => file.endsWith('.json'))
+      .map(file => {
+        const chatId = path.basename(file, '.json');
+        const chatData = JSON.parse(fs.readFileSync(path.join(chatsDir, file), 'utf8'));
+        return {
+          id: chatId,
+          title: chatData.title || 'Untitled Chat',
+          timestamp: chatData.timestamp
+        };
+      })
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    res.json(chats);
+  });
+});
+
+app.post('/api/chats', (req, res) => {
+  const { id, title, messages } = req.body;
+  
+  if (!id || !title || !messages) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  const chatData = {
+    id,
+    title,
+    timestamp: new Date().toISOString(),
+    messages
+  };
+  
+  fs.writeFile(
+    path.join(chatsDir, `${id}.json`),
+    JSON.stringify(chatData, null, 2),
+    (err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to save chat' });
+      }
+      res.json({ success: true, id });
+    }
+  );
+});
+
+app.delete('/api/chats/:id', (req, res) => {
+  const { id } = req.params;
+  
+  fs.unlink(path.join(chatsDir, `${id}.json`), (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to delete chat' });
+    }
+    res.json({ success: true });
+  });
+});
+
+app.get('/api/settings', (req, res) => {
+  fs.readFile(settingsPath, 'utf8', (err, data) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to read settings' });
+    }
+    res.json(JSON.parse(data));
+  });
+});
+
+app.post('/api/settings', (req, res) => {
+  const settings = req.body;
+  
+  fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to save settings' });
+    }
+    res.json({ success: true });
+  });
+});
+
+// WebSocket for real-time communication
+wss.on('connection', (ws) => {
+  ws.on('message', (message) => {
+    // Echo the message back (in a real app, this would be the LLM response)
+    ws.send(`Echo: ${message}`);
+  });
+});
+
+// Start server
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+});
