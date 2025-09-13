@@ -1,1 +1,13 @@
-.hljs-keyword{color:#cc99cc}.hljs-number{color:#f99157}.hljs-string{color:#99cc99}.hljs-comment{color:#7c7c7c}
+/* ----- dark-theme syntax highlighting (compact, consistent) ----- */
+.hljs-keyword {
+  color: #cc99cc;
+}
+.hljs-number {
+  color: #f99157;
+}
+.hljs-string {
+  color: #99cc99;
+}
+.hljs-comment {
+  color: #7c7c7c;
+}
