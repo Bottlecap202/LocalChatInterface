@@ -1,4 +1,8 @@
 /* ----- light-theme syntax highlighting (compact, consistent) ----- */
+.hljs-comment {
+  color: #718096;
+  font-style: italic;
+}
 .hljs-keyword {
   color: #805ad5;
 }
@@ -7,7 +11,4 @@
 }
 .hljs-string {
   color: #38a169;
-}
-.hljs-comment {
-  color: #718096;
 }
