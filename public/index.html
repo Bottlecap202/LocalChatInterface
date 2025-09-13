@@ -1,166 +1,110 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Local LLM Chat Interface</title>
-    <link rel="stylesheet" href="styles.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <meta charset="UTF-8">
+  <title>Local LLM Chat</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- offline-first assets -->
+  <link rel="stylesheet" href="assets/fontawesome/css/all.min.css">
+  <link rel="stylesheet" href="assets/highlight/github-dark.min.css">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="app-container">
-        <!-- Sidebar -->
-        <div class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <h2>Chats</h2>
-                <button id="new-chat-btn" class="btn btn-primary">
-                    <i class="fas fa-plus"></i> New Chat
-                </button>
-            </div>
-            <div class="chat-history" id="chat-history">
-                <!-- Chat history will be populated here -->
-            </div>
-            <div class="sidebar-footer">
-                <button id="settings-btn" class="btn btn-secondary">
-                    <i class="fas fa-cog"></i> Settings
-                </button>
-                <button id="theme-toggle" class="btn btn-secondary">
-                    <i class="fas fa-moon"></i> Dark Mode
-                </button>
-            </div>
+  <div id="app">
+    <!-- SIDEBAR -->
+    <aside id="sidebar" class="">
+      <header>
+        <h1>Chats</h1>
+        <div class="controls">
+          <button id="new-chat" class="btn" title="New chat"><i class="fas fa-plus"></i></button>
+          <button id="export-chat" class="btn" title="Export chat"><i class="fas fa-file-export"></i></button>
+          <button id="toggle-sidebar" class="btn" title="Toggle sidebar"><i class="fas fa-bars"></i></button>
         </div>
+      </header>
+      <section id="chat-history" class="scroll"></section>
+      <footer>
+        <button id="open-settings" class="btn full"><i class="fas fa-cog"></i> Settings</button>
+        <button id="theme-toggle" class="btn full"><i class="fas fa-moon"></i> Dark</button>
+      </footer>
+    </aside>
 
-        <!-- Main Content -->
-        <div class="main-content">
-            <!-- Chat Header -->
-            <div class="chat-header">
-                <button id="toggle-sidebar" class="btn btn-icon">
-                    <i class="fas fa-bars"></i>
-                </button>
-                <h2 id="chat-title">New Chat</h2>
-                <div class="chat-controls">
-                    <select id="model-selector">
-                        <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                        <option value="gpt-4">GPT-4</option>
-                        <option value="llama2">Llama 2</option>
-                        <option value="mistral">Mistral</option>
-                    </select>
-                </div>
-            </div>
-
-            <!-- Chat Messages -->
-            <div class="chat-messages" id="chat-messages">
-                <div class="message assistant-message">
-                    <div class="message-avatar">
-                        <i class="fas fa-robot"></i>
-                    </div>
-                    <div class="message-content">
-                        <p>Hello! I'm your local AI assistant. How can I help you today?</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Chat Input -->
-            <div class="chat-input-container">
-                <div class="input-wrapper">
-                    <textarea 
-                        id="message-input" 
-                        placeholder="Type your message here..." 
-                        rows="1"
-                    ></textarea>
-                    <button id="send-btn" class="btn btn-primary">
-                        <i class="fas fa-paper-plane"></i>
-                    </button>
-                </div>
-                <div class="input-footer">
-                    <small>Press Enter to send, Shift+Enter for new line</small>
-                </div>
-            </div>
+    <!-- MAIN -->
+    <main>
+      <header id="chat-header">
+        <span id="chat-title">New Chat</span>
+        <div id="chat-header-actions">
+          <select id="model"></select>
         </div>
+      </header>
+
+      <section id="chat-messages" class="scroll"></section>
+
+      <div id="typing-indicator">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+      </div>
+
+      <div id="input-area">
+        <textarea id="message-input" placeholder="Type your message…" rows="1"></textarea>
+        <button id="send-btn" class="btn"><i class="fas fa-paper-plane"></i></button>
+      </div>
+    </main>
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div id="settings-modal" class="modal">
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2>Settings</h2>
+        <button class="btn close"><i class="fas fa-times"></i></button>
+      </header>
+      <form id="settings-form">
+        <div class="row">
+          <label for="api-endpoint">API Endpoint</label>
+          <select id="api-endpoint"></select>
+          <input id="custom-api-endpoint" type="text" placeholder="http://localhost:5000/v1">
+        </div>
+        <div class="row">
+          <label for="model">Model</label>
+          <select id="model"></select>
+        </div>
+        <div class="row">
+          <label for="temperature">Temperature <span id="temp-val">0.7</span></label>
+          <input id="temperature" type="range" min="0" max="2" step="0.1" value="0.7">
+        </div>
+        <div class="row">
+          <label for="max-tokens">Max Tokens <span id="max-val">2048</span></label>
+          <input id="max-tokens" type="range" min="1" max="8192" step="1" value="2048">
+        </div>
+        <div class="row">
+          <label for="top-p">Top-P <span id="top-val">0.9</span></label>
+          <input id="top-p" type="range" min="0" max="1" step="0.05" value="0.9">
+        </div>
+        <footer class="modal-footer">
+          <button type="button" id="cancel-settings" class="btn secondary">Cancel</button>
+          <button type="submit" id="save-settings" class="btn">Save</button>
+        </footer>
+      </form>
     </div>
+  </div>
 
-    <!-- Settings Modal -->
-    <div class="modal" id="settings-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Settings</h2>
-                <button class="btn btn-icon close-modal">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <form id="settings-form">
-                    <div class="form-group">
-                        <label for="api-endpoint">API Endpoint</label>
-                        <select id="api-endpoint" name="apiEndpoint">
-                            <option value="http://localhost:1234/v1">Local OpenAI-compatible</option>
-                            <option value="http://localhost:11434/api">Ollama</option>
-                            <option value="http://localhost:8080">LocalAI</option>
-                            <option value="">Custom</option>
-                        </select>
-                        <input type="text" id="custom-api-endpoint" name="customApiEndpoint" placeholder="Enter custom endpoint" style="display: none;">
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="temperature">Temperature</label>
-                        <input type="range" id="temperature" name="temperature" min="0" max="1" step="0.1" value="0.7">
-                        <span id="temperature-value">0.7</span>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="max-tokens">Max Tokens</label>
-                        <input type="range" id="max-tokens" name="maxTokens" min="1" max="4096" step="1" value="2048">
-                        <span id="max-tokens-value">2048</span>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="top-p">Top-P</label>
-                        <input type="range" id="top-p" name="topP" min="0" max="1" step="0.1" value="0.9">
-                        <span id="top-p-value">0.9</span>
-                    </div>
-                    
-                    <div class="form-actions">
-                        <button type="button" id="export-settings" class="btn btn-secondary">
-                            <i class="fas fa-file-export"></i> Export Settings
-                        </button>
-                        <button type="button" id="import-settings" class="btn btn-secondary">
-                            <i class="fas fa-file-import"></i> Import Settings
-                        </button>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-save"></i> Save Settings
-                        </button>
-                    </div>
-                </form>
-            </div>
-        </div>
+  <!-- EDIT MESSAGE MODAL -->
+  <div id="edit-message-modal" class="modal">
+    <div class="modal-content">
+      <header class="modal-header">
+        <h2>Edit Message</h2>
+        <button class="btn close"><i class="fas fa-times"></i></button>
+      </header>
+      <textarea id="edit-textarea" rows="6"></textarea>
+      <footer class="modal-footer">
+        <button id="cancel-edit" class="btn secondary">Cancel</button>
+        <button id="save-edit" class="btn">Save</button>
+      </footer>
     </div>
+  </div>
 
-    <!-- Edit Message Modal -->
-    <div class="modal" id="edit-message-modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Edit Message</h2>
-                <button class="btn btn-icon close-modal">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="modal-body">
-                <form id="edit-message-form">
-                    <div class="form-group">
-                        <label for="edit-message-content">Message Content</label>
-                        <textarea id="edit-message-content" rows="5"></textarea>
-                    </div>
-                    <div class="form-actions">
-                        <button type="button" id="cancel-edit" class="btn btn-secondary">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Save Changes</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
-    <script src="script.js"></script>
+  <!-- OFFLINE LIBRARIES -->
+  <script src="assets/marked.min.js"></script>
+  <script src="assets/highlight.min.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>
