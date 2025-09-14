@@ -8,7 +8,6 @@
   const typing = $("#typing");
   const sidebar = $("#sidebar");
   const historyList = $("#history-list");
-  let ws;
   let currentId = null;
   let messages = []; // {role, content, id}
 
@@ -43,26 +42,79 @@
   function genId() { return crypto.randomUUID(); }
   function scrollBottom() { chat.scrollTop = chat.scrollHeight; }
 
-  /* ---------- WS ---------- */
-  function connect() {
-    ws = new WebSocket(`ws://${location.host}/api/stream`);
-    ws.onopen = () => console.log("WS open");
-    ws.onclose = () => setTimeout(connect, 2000);
-    ws.onmessage = async e => {
-      const d = JSON.parse(e.data);
-      if (d.token !== undefined) {
-        const last = messages[messages.length - 1];
-        if (last && last.role === "assistant") {
-          last.content += d.token;
-          renderMessage(last);
-        }
-      } else if (d.done) {
-        typing.hidden = true;
-        save();
-      }
+  /* ---------- HTTP streaming ---------- */
+  async function streamReply(userMessage, history) {
+    const settings = await (await fetch("/api/settings")).json();
+    const body = {
+      message: userMessage,
+      history: history,
+      temperature: settings.temp,
+      max_tokens: settings.max_tokens,
+      top_p: settings.top_p
     };
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) { console.error("stream error:", res.status); return; }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let assistantDiv = null;
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, {stream: true});
+      for (const line of chunk.split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        try {
+          const msg = JSON.parse(line);
+          if (msg.token !== undefined) {
+            if (!assistantDiv) {                       // first token
+              const last = messages[messages.length - 1];
+              if (!last || last.role !== "assistant") {
+                messages.push({role: "assistant", content: "", id: genId()});
+              }
+              assistantDiv = renderMessage(messages[messages.length - 1]);
+            }
+            messages[messages.length - 1].content += msg.token;
+            assistantDiv.querySelector(".content").innerHTML = md.parse(messages[messages.length - 1].content);
+            scrollBottom();
+          }
+          if (msg.done) { typing.hidden = true; save(); return; }
+        } catch (e) { /* ignore malformed lines */ }
+      }
+    }
   }
-  connect();
+
+  /* ---------- interact ---------- */
+  function addMessage(role, content, id = genId()) {
+    const m = { role, content, id };
+    messages.push(m);
+    renderMessage(m);
+    return m;
+  }
+  async function send() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    autoHeight();
+    addMessage("user", text);
+    typing.hidden = false;
+    save();
+    await streamReply(text, messages.slice(0, -1).map(({role, content}) => ({role, content})));
+  }
+  form.addEventListener("submit", e => { e.preventDefault(); send(); });
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+  input.addEventListener("input", autoHeight);
+  function autoHeight() {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 120) + "px";
+  }
 
   /* ---------- render ---------- */
   function renderMessage(m) {
@@ -86,35 +138,7 @@
     }
     div.querySelector(".content").innerHTML = md.parse(m.content);
     scrollBottom();
-  }
-
-  /* ---------- interact ---------- */
-  function addMessage(role, content, id = genId()) {
-    const m = { role, content, id };
-    messages.push(m);
-    renderMessage(m);
-    return m;
-  }
-  async function send() {
-    const text = input.value.trim();
-    if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-    input.value = "";
-    autoHeight();
-    addMessage("user", text);
-    typing.hidden = false;
-    save();
-    const history = messages.slice(0, -1).map(({ role, content }) => ({ role, content }));
-    ws.send(JSON.stringify({ action: "stream", message: text, history }));
-    addMessage("assistant", ""); // start empty
-  }
-  form.addEventListener("submit", e => { e.preventDefault(); send(); });
-  input.addEventListener("keydown", e => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-  });
-  input.addEventListener("input", autoHeight);
-  function autoHeight() {
-    input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, 120) + "px";
+    return div;
   }
 
   /* ---------- message controls ---------- */
@@ -137,9 +161,7 @@
         messages.splice(userIdx, 1); $(`[data-id="${messages[userIdx]?.id}"]`)?.remove();
         addMessage("user", messages[userIdx].content);
         typing.hidden = false;
-        const hist = messages.slice(0, -1).map(({ role, content }) => ({ role, content }));
-        ws.send(JSON.stringify({ action: "stream", message: messages[userIdx].content, history: hist }));
-        addMessage("assistant", "");
+        streamReply(messages[userIdx].content, messages.slice(0, -1).map(({role, content}) => ({role, content})));
       }
     }
   });
