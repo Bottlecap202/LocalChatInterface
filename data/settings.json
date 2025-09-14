@@ -5,5 +5,8 @@
   "dark": true,
   "title": "AI Assistant",
   "subtitle": "How can I help you today?",
-  "input_placeholder": "Ask me anything…"
+  "input_placeholder": "Ask me anything…",
+  "curl_path": "curl",
+  "curl_args": [],
+  "curl_timeout": 300
 }
