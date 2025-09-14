@@ -5,7 +5,7 @@ OpenAI-compatible streaming endpoint expected at
 http://192.168.1.163:5000/v1/chat/completions
 """
 
-import json, pathlib, uuid, time, asyncio
+import json, pathlib, uuid, time, asyncio, shlex
 from aiohttp import web, WSMsgType
 import aiohttp_cors
 import logging
@@ -22,8 +22,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-import aiohttp  # kept for any future outbound use; not used in stream_llm anymore
-
 # ---------- config -----------------------------------------------------------
 ROOT_DIR       = pathlib.Path(__file__).parent
 DATA_DIR       = ROOT_DIR / "data"
@@ -36,7 +34,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 # ---------- helpers ----------------------------------------------------------
 def sanitize(text: str) -> str:
-    return text.replace("<", "<").replace(">", ">")
+    return text.replace("<", "&lt;").replace(">", "&gt;")
 
 def load_json(path, default):
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
@@ -86,7 +84,7 @@ async def chat_stream(request):
         response.headers['Connection'] = 'keep-alive'
         await response.prepare(request)
         
-        # Stream tokens using existing curl-based function
+        # Stream tokens using curl-based function
         token_count = 0
         async for token in stream_llm(user_msg, history, temp, max_tokens, top_p):
             token_count += 1
@@ -112,9 +110,9 @@ async def stream_llm(prompt, history, temp, max_tokens, top_p):
     logger.info(f"Settings: temp={temp}, max_tokens={max_tokens}, top_p={top_p}")
     logger.info(f"Target API: {LLM_API_BASE}")
     
-    msgs = [{"role": "system", "content": "You are a helpful AI assistant."}] + history + [{"role": "user", "content": prompt}]
+    msgs = [{"role": "system", "content": "You are Cortex, a helpful assistant that only answers concisely."}] + history + [{"role": "user", "content": prompt}]
     payload = {
-        "model": "local",
+        "model": "koboldcpp",
         "messages": msgs,
         "temperature": temp,
         "max_tokens": max_tokens,
@@ -124,12 +122,15 @@ async def stream_llm(prompt, history, temp, max_tokens, top_p):
     
     logger.debug(f"Full payload: {json.dumps(payload, indent=2)}")
     
+    # Properly escape the JSON body for the shell
+    json_str = shlex.quote(json.dumps(payload, separators=(',', ':')))
+    
     cmd = [
         "curl", "-s", "-N",
         "-X", "POST",
         LLM_API_BASE,
         "-H", "Content-Type: application/json",
-        "-d", json.dumps(payload)
+        "-d", json_str
     ]
     
     logger.info(f"Curl command: {' '.join(cmd)}")
