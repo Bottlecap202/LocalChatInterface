@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import Dict, Any, List
 
 # --- Configuration ---
-API_BASE_URL = "http://192.168.1.163:5000/v1"
+API_BASE_URL = "http://192.168.1.163:5002/v1"
 API_TIMEOUT_SECONDS = 480
 MAX_TOKENS_SUMMARY = 1536
 

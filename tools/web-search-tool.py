@@ -20,11 +20,11 @@ import logging
 from typing import Dict, List, Any, Optional
 
 # --- Configuration & Logging ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', stream=sys.stderr)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-DEFAULT_SEARXNG_URL = "http://localhost:5003/search"
-DEFAULT_API_URL = "http://192.168.1.163:5000/v1/chat/completions"
+DEFAULT_SEARXNG_URL = "http://192.168.1.98:5003/search"
+DEFAULT_API_URL = "http://192.168.1.163:5002/v1/chat/completions"
 DEFAULT_MODEL_NAME = "koboldcpp"
 DEFAULT_API_TIMEOUT = 480
 DEFAULT_MAX_RESULTS = 8
@@ -37,7 +37,7 @@ def call_llm(messages: List[Dict], api_url: str, model: str, api_timeout: int, m
         "model": model,
         "messages": messages,
         "max_tokens": max_tokens,
-        "temperature": 0.7
+        "temperature": 0.3
     }
     try:
         logger.info(f"Calling LLM at {api_url} with model {model}")
@@ -58,11 +58,11 @@ def call_llm(messages: List[Dict], api_url: str, model: str, api_timeout: int, m
 
 def optimize_search_query(prompt: str, api_url: str, model: str, api_timeout: int) -> str:
     """Converts a user prompt into an optimized short search query string."""
-    system_prompt = """Convert the user's prompt into an optimal web search query (2-8 words).
+    system_prompt = """Convert the user's prompt into an optimal web search query (2-16 words).
 - Use specific keywords
 - Remove conversational words ("what", "how", "can you tell me")
 - Focus on core information need
-- Include time modifiers if relevant ("today", "current", "2024")
+- Include time modifiers if relevant ("today", "current", "this year")
 Return ONLY the optimized search query string."""
     messages = [
         {"role": "system", "content": system_prompt},
@@ -75,7 +75,7 @@ Return ONLY the optimized search query string."""
     return prompt
 
 def extract_queries(prompt: str, api_url: str, model: str, api_timeout: int) -> List[str]:
-    """Extracts 2-8 concise search queries from a user prompt using the LLM."""
+    """Extracts 2-16 concise search queries from a user prompt using the LLM."""
     system_prompt = """You are an expert at formulating effective web search queries.
 Based on the user's prompt, generate a JSON array of 2-8 concise search queries.
 Each query should be relevant and optimized for a web search engine.
@@ -109,12 +109,20 @@ def search_web(query: str, searxng_url: str, max_results: int) -> List[Dict]:
     # Construct the correct SearxNG URL based on the user's curl example
     # Expected format: http://localhost:5003/search?q=latest+Nvidia+AI+chips+news&format=json
     search_url = f"{searxng_url}?q={requests.utils.quote(query)}&format=json"
+    # DEBUG: Log URL construction details
+    logger.debug(f"DEBUG: Original query: '{query}'")
+    logger.debug(f"DEBUG: SearxNG URL base: '{searxng_url}'")
+    logger.debug(f"DEBUG: Encoded query: '{requests.utils.quote(query)}'")
+    logger.debug(f"DEBUG: Final search URL: '{search_url}'")
     headers = {"Accept": "application/json"}
     try:
         logger.info(f"Searching SearxNG at {search_url}")
         response = requests.get(search_url, headers=headers, timeout=30) # Increased timeout for web search
+        logger.debug(f"Response status code: {response.status_code}")
+        logger.debug(f"Response headers: {dict(response.headers)}")
         response.raise_for_status()
         data = response.json()
+        logger.debug(f"Successfully parsed JSON response. Number of results: {len(data.get('results', []))}")
         results = data.get('results', [])
         processed_results = []
         for result in results[:max_results]:
@@ -131,6 +139,9 @@ def search_web(query: str, searxng_url: str, max_results: int) -> List[Dict]:
     except requests.exceptions.RequestException as e:
         logger.error(f"Web search failed for query '{query}': {e}")
         return []
+    except Exception as e:
+        logger.error(f"Unexpected error during web search: {e}")
+        raise
 
 def synthesize_answer(original_prompt: str, queries: List[str], results_by_query: List[Dict], api_url: str, model: str, api_timeout: int) -> str:
     """Synthesizes a final answer from search results using the LLM."""
@@ -164,14 +175,24 @@ Requirements:
 - Provide direct, factual answers.
 - If results don't fully answer the question, clearly state what information is missing.
 - Be thorough but concise.
-- Organize your response logically, addressing the user's prompt directly.
+- Organize your response logically, addressing your prompt directly.
 - If multiple queries were used, structure your answer to cover insights from all of them, providing a consolidated summary at the end if appropriate."""
     
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": context}
     ]
+    # DEBUG: Log LLM synthesis details
+    logger.debug(f"DEBUG: Starting LLM synthesis for {len(queries)} queries")
+    logger.debug(f"DEBUG: Total search results across all queries: {sum(len(rq.get('results', [])) for rq in results_by_query)}")
+    logger.debug(f"DEBUG: Context length for LLM: {len(context)} characters")
+    logger.debug(f"DEBUG: LLM API URL: {api_url}")
+    logger.debug(f"DEBUG: LLM Model: {model}")
+    logger.debug(f"DEBUG: Sending LLM synthesis request...")
     answer = call_llm(messages, api_url, model, api_timeout, max_tokens=4000)
+    logger.debug(f"DEBUG: LLM synthesis call completed. Answer received: {bool(answer)}")
+    logger.debug(f"DEBUG: Answer length: {len(answer) if answer else 0} characters")
+    logger.debug(f"DEBUG: LLM Max Tokens: {api_timeout}")
     
     if not answer:
         return "I was unable to synthesize the search results into a coherent answer due to an LLM error."

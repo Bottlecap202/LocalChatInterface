@@ -233,6 +233,40 @@ reEnableBtn.addEventListener('click', () => {
     appendMessage("All tools have been re-enabled.", "system");
 });
 
+// --- ADDITION: Smart Action button event handler ---
+smartActionBtn.addEventListener('click', async () => {
+    const userMessage = chatInput.value.trim();
+    if (!userMessage) {
+        appendMessage("Please enter a question or request before using Smart Action.", "system");
+        return;
+    }
+
+    appendMessage(userMessage, "user");
+    appendMessage("Analyzing request and selecting appropriate tool...", "system");
+    chatInput.value = "";
+
+    try {
+        const response = await fetch('/decide-and-run-tool', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt: userMessage }),
+        });
+
+        const result = await response.json();
+        if (response.ok) {
+            appendMessage(result.output, "system");
+            if (result.tool_called) {
+                appendMessage(`Used tool: ${result.tool_called}`, "system");
+            }
+        } else {
+            appendMessage(`Error: ${result.error}`, "system");
+        }
+    } catch (error) {
+        console.error("Error in Smart Action:", error);
+        appendMessage("An unexpected error occurred while processing your request.", "system");
+    }
+});
+
 // --- RETAINED: Your original event listeners, completely untouched ---
 chatForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -240,7 +274,7 @@ chatForm.addEventListener("submit", (e) => {
     if (msg === "") return;
     // Check if a tool is selected. If so, don't submit as a chat message.
     if (toolSelect.value && toolArgsSelect.value) {
-        appendMessage("Please use the 'Use Tool' button to run a tool with the provided ticker.", "system");
+        appendMessage("Please use the 'Use Tool' button to run a tool with your selected mode.", "system");
         return;
     }
     chatInput.value = "";
