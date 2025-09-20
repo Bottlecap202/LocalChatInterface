@@ -90,7 +90,7 @@ async function loadToolOptions(toolName) {
 async function callTool() {
     const selectedTool = toolSelect.value;
     const selectedArgs = toolArgsSelect.value; // This gets the '--mode ...' part
-    const ticker = chatInput.value.trim();     // This gets the ticker symbol like 'GOOGL'
+    const chatInputValue = chatInput.value.trim(); // This gets the user input
 
     // --- Step 1: Validate all required inputs from the user ---
     if (!selectedTool) {
@@ -103,7 +103,7 @@ async function callTool() {
         return;
     }
     // The tool also requires a ticker symbol.
-    if (!ticker) {
+    if (!chatInputValue) {
         appendMessage("Please enter a stock ticker in the input box before using the tool.", "system");
         return;
     }
@@ -111,11 +111,24 @@ async function callTool() {
     // --- Step 2: Build the final, complete argument string ---
     // This is the crucial fix. We combine the mode and the ticker arguments.
     // Example result: "--mode get-performance-summary --ticker GOOGL"
-    const finalArgs = `${selectedArgs} --ticker ${ticker}`;
+    let finalArgs;
+    let userMessage;
+    
+    // Handle argument construction based on tool type
+    if (selectedTool === "web-search-tool.py") {
+        // Web search tool expects positional arguments after mode flags
+        finalArgs = `${selectedArgs} ${chatInputValue}`;
+        const modeName = toolArgsSelect.options[toolArgsSelect.selectedIndex].text;
+        userMessage = `Request: ${modeName} - ${chatInputValue.substring(0, 80)}${chatInputValue.length > 80 ? '...' : ''}`;
+    } else {
+        // Stock and other tools use --ticker parameter
+        finalArgs = `${selectedArgs} --ticker ${chatInputValue}`;
+        const modeName = toolArgsSelect.options[toolArgsSelect.selectedIndex].text;
+        userMessage = `Request: ${modeName} for ${chatInputValue}`;
+    }
 
     // --- Step 3: Display user feedback and call the tool ---
-    const modeName = toolArgsSelect.options[toolArgsSelect.selectedIndex].text;
-    appendMessage(`Request: ${modeName} for ${ticker}`, "user");
+    appendMessage(userMessage, "user");
     appendMessage(`Calling tool: ${selectedTool}...`, "system");
     chatInput.value = ""; // Clear the input box after use
 
